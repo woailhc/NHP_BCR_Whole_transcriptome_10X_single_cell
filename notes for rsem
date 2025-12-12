@@ -1,0 +1,67 @@
+# make rsem reference
+$ wget "ftp://ftp.ensembl.org/pub/release-102/gtf/macaca_mulatta/Macaca_mulatta.Mmul_10.102.chr.gtf.gz"
+$ rsem-prepare-reference --gtf /data/wuw5/sandbox2/mmul_downloads/Macaca_mulatta.Mmul_10.102.gtf --bowtie2 --bowtie2-path /usr/local/apps/bowtie/2-2.4.2/bin/ /data/wuw5/sandbox2/mmul_downloads/Macaca_mulatta.Mmul_10.dna.toplevel.fa /data/wuw5/sandbox2/mmul_rsem_reference/nhp_dna
+# make new reference with cDNA?
+$ wget "https://ftp.ncbi.nlm.nih.gov/genomes/all/annotation_releases/9544/103/GCF_003339765.1_Mmul_10/GCF_003339765.1_Mmul_10_genomic.gtf.gz"
+$ rsem-prepare-reference --gtf /data/wuw5/sandbox/ncbi/GCF_003339765.1_Mmul_10_genomic.gtf --bowtie2 --bowtie2-path /usr/local/apps/bowtie/2-2.4.2/bin/ /data/wuw5/sandbox/ensemble/Macaca_mulatta.Mmul_10.dna.toplevel.fa /data/wuw5/sandbox/ncbi/rsem_reference/nhp
+# the gtf file's last line is not formatted well, delete the last line
+$ sed "$d" GCF_003339765.1_Mmul_10_genomic.gtf | tail
+
+$ rsem-prepare-reference --gff /data/wuw5/sandbox/ncbi/GCF_003339765.1_Mmul_10_genomic.gff --bowtie2 --bowtie2-path /usr/local/apps/bowtie/2-2.4.2/bin/ /data/wuw5/sandbox/ensemble/Macaca_mulatta.Mmul_10.dna.toplevel.fa /data/wuw5/sandbox/ncbi/rsem_reference/nhp_2
+## failed due to the empty input of gene_id in both the .gtf and .gff files downloaded from ncbi. the ncbi
+
+The GTF file might be corrupted!
+Stop at line : NC_005943.1      RefSeq  exon    536     607     .       +       .       gene_id ""; transct "tRNA-Phe"; exon_number "1";
+Error Message: Attribute gene_id's value should be surrounded by double quotes and cannot be empty!
+$ sed -n "1 s/${gene_id}.*//p" tryout6.isoforms.results | sed 's/[^\t*]//g' | wc -c
+1
+
+## cannot make rsem compatible reference with ncbi .gtf and ensemble genome.fa file. Therefore, test to add gene name to the result data matrix
+# use http://useast.ensembl.org/biomart/ choose Attributes that need to be added to the list --Transcript stable ID --Gene Stable ID --Gene name --HGNC symbol for start
+# generate the tsv file by the result icon on the upper left panel.
+# name the file as mmul_10_mart_export.txt.gz and copy it to biowulf folder
+# the first column of each the biomart gene_name list and the rsem result matrix are transcript_id. We can join 
+$ sort -k1,1 tryout6.isoforms.results > tmp.mat 
+$ sort -k1,1 mmul_10_mart_export.txt > tmp.map 
+$ join -t$'\t' -1 1 -2 1 tmp.mat tmp.map > out.map
+$ head out.map
+
+
+
+
+# calculate RNA-seq expression individually
+$ rsem-calculate-expression --quiet -p 8 --paired-end --bowtie2 --bowtie2-path /usr/local/apps/bowtie/2-2.4.2/bin/ /data/wuw5/hisat2/NHP_fastq/NHP-cDNA-DF4T-P1-A01_S577_L001_R1_001.fastq /data/wuw5/hisat2/NHP_fastq/NHP-cDNA-DF4T-P1-A01_S577_L001_R2_001.fastq /data/wuw5/sandbox2/mmul_rsem_reference/dna_nhp/nhp_dna output_ NHP-cDNA-DF4T-P1-A01_S577
+
+##sbatch job submitted to biowulf
+
+#! /bin/bash
+#SBATCH --gres=lscratch:20 -a 1-96 -p quick --time=4:00:00 --cpus-per-task=8 --mem=55G
+# this file is STAR.sh
+set -o pipefail
+set -e
+function fail {
+echo "$@" >&2
+exit 1
+}
+module load samtools || fail "could not load samtools module"
+module load STAR || fail "could not load STAR module"
+module load rsem || fail "could not load rsem module"
+#cd /data/~/test_ig_NHP || fail "no such directory"
+
+i=$SLURM_ARRAY_TASK_ID
+
+path0=/data~/NHP_Ig_fastq
+GENOME=/data/wuw5/sandbox2/mmul_rsem_reference/nhp_dna
+sm=`cat sample_ig_96 | head -n $i | tail -n 1`;
+rsem-calculate-expression \
+--star \
+--star-gzipped-read-file \
+--star-path /usr/local/apps/STAR/2.7.6a/bin \
+--paired-end $path0/${sm}_L001_R1_001.fastq.gz $path0/${sm}_L001_R2_001.fastq.gz \
+$GENOME \
+$sm
+--------------
+
+$ grep 'LOC720985' *isoforms.results > 96_ig_iso
+# for LOC720985, 11 samples have positive readings
+
